@@ -15,7 +15,8 @@ shaped this code are written down with their reasons.
 | `src/core/` | Everything that is not JUCE-plugin-specific and has no GUI: the ring buffer, the wire format, the HTTP and WebSocket protocol code, the server and the streaming engine. Compiled into both the plugin and the test app. |
 | `src/plugin/` | The JUCE `AudioProcessor`, its editor, and the QR code component. Depends on `src/core`; nothing in `src/core` depends on it. |
 | `web/` | The receiver page: `index.html` and `app.js`. No build step, no modules, no external requests. Compiled into the binary by `juce_add_binary_data`. |
-| `tests/` | The test app: a tiny registry-and-macros harness (`TestSupport.h`) plus one file per unit under test. No test framework dependency. |
+| `tests/` | The C++ test app: a tiny registry-and-macros harness (`TestSupport.h`) plus one file per unit under test. No test framework dependency. |
+| `tests/web/` | The receiver's tests, run under Node: a stubbed-browser harness plus the test file. |
 | `tools/` | `listen.js`, a dependency-free headless receiver used to test the sender without a phone. |
 | `third_party/qrcodegen/` | Nayuki's QR generator, MIT, vendored unmodified. Warnings are disabled for it in CMake; do not edit it. |
 | `docs/` | This guide, the protocol reference, the ADRs, and the original plan and risk review. |
@@ -66,9 +67,17 @@ build/PhonePostMixTests_artefacts/<Config>/PhonePostMixTests
 ctest --test-dir build --output-on-failure
 ```
 
-`ctest` runs one target, `PhonePostMixTests`, which runs all 43 tests in-process and prints
-a pass/fail line each, then every failure with file and line. It needs no audio device, no
+`ctest` runs two suites.
+
+`PhonePostMixTests` is a console app that runs all 43 C++ tests in-process and prints a
+pass/fail line each, then every failure with file and line. It needs no audio device, no
 plugin host and no network beyond loopback; a full run takes a few seconds.
+
+`PhonePostMixReceiverTests` runs `tests/web/receiver.test.js` under Node. It loads
+`web/app.js` into a stubbed browser (`tests/web/harness.js` — a `vm` context and about
+forty lines of DOM stubs, not jsdom) and drives the packet decoder, the ring buffer, the
+resampler, the concealment and the drift controller directly. It is registered only when
+CMake finds `node`, so a contributor without Node still gets a green C++ build.
 
 You can also run the binary directly — useful for a quick loop, and the only way to get the
 output without ctest's buffering:
@@ -87,6 +96,7 @@ What is covered, and therefore what you will break if you are careless:
 | `WebSocketProtocolTests.cpp` | SHA-1 against the FIPS 180 vectors, the RFC 6455 accept-key example, shortest-length frame encoding, unmasking, reassembly across arbitrary byte splits, control frames during reassembly, and rejection of unmasked and oversized client frames. |
 | `StreamServerTests.cpp` | Serving and 404 over a real loopback socket, upgrade and broadcast, client text delivery, ping/pong, disconnect detection, port fallback, clean shutdown with a client attached, drop-oldest backpressure, and 60 start/stop cycles with a file-descriptor count (POSIX only). |
 | `StreamEngineTests.cpp` | The page is served from `BinaryData`, upgrades without the token are refused with 403, packets match the declared format and carry `discontinuity` on the first one, the URL carries the token in the fragment, and `pushAudio` is safe while stopped. |
+| `tests/web/receiver.test.js` | The receiver: all three formats decode to the same audio, mono is duplicated, loss is distinguished from reordering, discontinuity and config-epoch changes flush, the ring discards down to target instead of growing, resampling consumes the right number of input frames, underruns fade instead of clicking, and the drift correction stays inside its clamp. |
 
 ### Adding a test
 
