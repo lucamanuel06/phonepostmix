@@ -24,6 +24,10 @@ public:
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
+    // Keeps the double-precision overload visible. Without this GCC warns that declaring
+    // only the float version hides the base class's AudioBuffer<double> overload.
+    using juce::AudioProcessor::processBlock;
+
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override                          { return true; }
 
