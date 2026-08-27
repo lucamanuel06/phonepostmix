@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/StreamEngine.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 namespace ppm
@@ -40,7 +42,28 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    //== Used by the editor ======================================================
+    StreamEngine& getEngine() noexcept { return engine; }
+
+    /** Starts the server. Returns false if every port in the search range was taken. */
+    bool startStreaming();
+    void stopStreaming();
+
+    /** True once a start attempt has failed, so the editor can explain itself. */
+    bool didStartFail() const noexcept { return startFailed; }
+
 private:
+    StreamEngine engine;
+    bool startFailed = false;
+
+    /** Lifetime token for deferred message-thread work.
+
+        setStateInformation has to defer the auto-start, and a host may well destroy the
+        processor before that message runs. Capturing a weak_ptr to this is the cheapest
+        way to make the deferred call a no-op instead of a use-after-free.
+    */
+    std::shared_ptr<int> lifetime { std::make_shared<int> (0) };
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PhonePostMixProcessor)
 };
 
