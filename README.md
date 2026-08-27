@@ -364,8 +364,9 @@ that licence propagates to this whole project. See
 
 One practical consequence worth knowing: AGPLv3 §13 requires that users who interact with
 the software **remotely over a network** be offered the corresponding source. Serving a
-page to a phone is exactly that. Adding a source link to the served page is the obvious
-way to satisfy it, and the page does not have one yet.
+page to a phone is exactly that, which is why the receiver page carries a source link in
+its footer. If you fork this and change the receiver, keep that link pointing at *your*
+source.
 
 ### Credits
 

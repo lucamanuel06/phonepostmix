@@ -59,7 +59,7 @@
   var el = {};
   ['listen', 'status', 'statusText', 'dot', 'subtitle', 'meterL', 'meterR', 'volume',
    'volumeValue', 'buffer', 'bufferValue', 'noteWakeLock', 'noteBluetooth', 'noteSilent',
-   'diagnostics', 'copy', 'keepAlive'].forEach(function (id) { el[id] = document.getElementById(id); });
+   'diagnostics', 'copy', 'keepAlive', 'version'].forEach(function (id) { el[id] = document.getElementById(id); });
 
   // ---------------------------------------------------------------------------
   // State
@@ -399,6 +399,7 @@
     // forward-compatibility contract, and honouring it costs nothing.
     if (message.type === 'hello' || message.type === 'config') {
       if (message.protocol !== VERSION) { setStatus('error', 'unsupported protocol'); return; }
+      if (message.sender) el.version.textContent = String(message.sender).replace(/^PhonePostMix\s*/, '');
       if (typeof message.sampleRate === 'number') stream.sampleRate = message.sampleRate;
       if (typeof message.channels === 'number') stream.channels = message.channels;
       if (typeof message.hostPlaying === 'boolean') stream.hostPlaying = message.hostPlaying;
