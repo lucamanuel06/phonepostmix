@@ -76,17 +76,22 @@ set(PPM_CORE_SOURCES
 target_sources(PhonePostMix PRIVATE
     ${PPM_CORE_SOURCES}
     src/plugin/PluginProcessor.cpp
-    src/plugin/PluginEditor.cpp)
+    src/plugin/PluginEditor.cpp
+    src/plugin/QrCodeComponent.cpp
+    third_party/qrcodegen/qrcodegen.cpp)
+
+# Vendored third-party code is not ours to warn about, and nayuki's QR generator is
+# unmodified upstream.
+set_source_files_properties(third_party/qrcodegen/qrcodegen.cpp PROPERTIES COMPILE_OPTIONS "-w")
 
 target_compile_definitions(PhonePostMix PUBLIC
     PPM_VERSION="${PROJECT_VERSION}"
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
-    JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_REPORT_APP_USAGE=0)
 
-target_include_directories(PhonePostMix PRIVATE src)
+target_include_directories(PhonePostMix PRIVATE src third_party/qrcodegen)
 
 target_link_libraries(PhonePostMix
     PRIVATE
