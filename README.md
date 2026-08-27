@@ -299,7 +299,8 @@ follows from that.
 - **iOS silent switch mutes web audio.** The page sets `navigator.audioSession.type` where
   Safari supports it, which usually fixes it; if you see meters but hear nothing, check
   the ringer switch.
-- **Windows and Linux are unverified.** Nobody has run a build there yet.
+- **Windows and Linux build and test green in CI, but no DAW has loaded the plugin
+  there.** Compiling is not the same as working.
 - **The AU is not declared sandbox-safe**, deliberately — it opens sockets. Logic and
   GarageBand behaviour has not been verified.
 
