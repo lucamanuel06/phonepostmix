@@ -1,0 +1,116 @@
+name: build
+
+# Every push and pull request builds all three platforms and runs the test suite.
+# The macOS job additionally validates the AudioUnit with auval and both plugin formats
+# with pluginval, because a plugin that opens sockets and spawns threads is exactly the
+# kind that fails validation in ways unit tests cannot see.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-14
+          - name: Windows
+            os: windows-2022
+          - name: Linux
+            os: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # JUCE needs a long list of X11, audio and font development packages on Linux.
+      # Keep this list in sync with the Linux section of README.md.
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev libjack-jackd2-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
+            libxrandr-dev libxrender-dev libglu1-mesa-dev mesa-common-dev \
+            libharfbuzz-dev ninja-build
+
+      - uses: seanmiddleditch/gha-setup-ninja@v5
+        if: runner.os != 'Linux'
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      # JUCE is a ~120 MB shallow clone. Caching the FetchContent directory turns a
+      # 30-second download into a cache restore on every run after the first.
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: juce-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+        shell: bash
+
+      - name: Build
+        run: cmake --build build --config $BUILD_TYPE
+        shell: bash
+
+      - name: Test
+        working-directory: build
+        run: ctest --output-on-failure --build-config $BUILD_TYPE
+        shell: bash
+
+      # auval only exists on macOS, and it is the gate that matters for Logic and
+      # GarageBand: an AudioUnit that fails auval will not load at all.
+      - name: Validate AudioUnit (auval)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R build/PhonePostMix_artefacts/$BUILD_TYPE/AU/PhonePostMix.component \
+                ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -v aufx Ppm1 Ppmx
+
+      - name: Validate with pluginval
+        if: runner.os == 'macOS'
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          # Strictness 5 covers the lifecycle abuse this plugin has to survive: repeated
+          # instantiation, editor open/close cycles, and sample-rate changes mid-stream.
+          for target in "build/PhonePostMix_artefacts/$BUILD_TYPE/VST3/PhonePostMix.vst3" \
+                        "$HOME/Library/Audio/Plug-Ins/Components/PhonePostMix.component"; do
+            ./pluginval.app/Contents/MacOS/pluginval \
+              --validate-in-process --strictness-level 5 --timeout-ms 300000 \
+              --validate "$target"
+          done
+        shell: bash
+
+      - name: Check the receiver page parses
+        run: node --check web/app.js && node --check tools/listen.js
+        shell: bash
+
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhonePostMix-${{ matrix.name }}
+          path: |
+            build/PhonePostMix_artefacts/${{ env.BUILD_TYPE }}/VST3
+            build/PhonePostMix_artefacts/${{ env.BUILD_TYPE }}/AU
+            build/PhonePostMix_artefacts/${{ env.BUILD_TYPE }}/Standalone
+          if-no-files-found: warn
