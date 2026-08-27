@@ -85,7 +85,9 @@ if(PPM_BUILD_TESTS)
 
     target_sources(PhonePostMixTests PRIVATE
         tests/TestMain.cpp
-        tests/AudioRingBufferTests.cpp)
+        tests/AudioRingBufferTests.cpp
+        tests/WebSocketProtocolTests.cpp
+        src/core/WebSocketProtocol.cpp)
 
     target_include_directories(PhonePostMixTests PRIVATE src tests)
 
