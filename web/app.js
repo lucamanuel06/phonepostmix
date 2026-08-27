@@ -59,7 +59,7 @@
   var el = {};
   ['listen', 'status', 'statusText', 'dot', 'subtitle', 'meterL', 'meterR', 'volume',
    'volumeValue', 'buffer', 'bufferValue', 'noteWakeLock', 'noteBluetooth', 'noteSilent',
-   'diagnostics', 'copy', 'keepAlive', 'version'].forEach(function (id) { el[id] = document.getElementById(id); });
+   'diagnostics', 'copy', 'keepAlive', 'version', 'noteStarving'].forEach(function (id) { el[id] = document.getElementById(id); });
 
   // ---------------------------------------------------------------------------
   // State
@@ -83,11 +83,15 @@
     lastSeq: -1, connectedAt: 0, reconnects: 0, bytesWindow: 0, kbitPerSecond: 0
   };
 
-  var target = { ms: 120 };
+  // floorMs is the smallest buffer that can actually work, derived from the output block
+  // once there is an AudioContext to measure against. It is a value rather than a branch
+  // so there is exactly one path through effectiveTargetMs().
+  var target = { ms: 240, floorMs: 0 };
   var drift = { integral: 0, correction: 0, ppm: 0, outOfRangeSince: 0 };
   var resampler = { phase: 0, prevL: 0, prevR: 0, primed: false };
   var meter = { l: 0, r: 0 };
   var conceal = { active: false, gain: 1 };
+  var lastUnderruns = 0;
 
   var socket = null;
   var reconnectDelay = 500;
@@ -129,8 +133,40 @@
     ring.write = w;
   }
 
+  // The block size the audio callback actually asks for. SPN_BUFFER is what we request,
+  // but the observed value is what the buffer has to survive, so it is measured rather
+  // than assumed.
+  var observedBlockFrames = SPN_BUFFER;
+
+  /** The smallest jitter buffer that can possibly work, in milliseconds.
+
+      ScriptProcessorNode does not drain the buffer smoothly: it takes a whole block —
+      4096 frames, 85 ms at 48 kHz — in one instant, and then asks for nothing until the
+      next callback. So the usable margin against network jitter is not the target, it is
+      `target - blockDuration`. A 120 ms target behind an 85 ms block leaves 35 ms of
+      headroom, which is less than the p99 delivery tail on ordinary Wi-Fi: the buffer
+      empties on almost every burst, concealment fades each block out, and the result
+      sounds like a quiet, gasping mix rather than like a dropout.
+
+      Two blocks is the floor: one for the block in flight, one for the jitter. */
+  function minimumTargetMs() {
+    if (!ctx) return 0;
+    return Math.ceil(2 * observedBlockFrames / ctx.sampleRate * 1000);
+  }
+
+  /** Recomputes the floor. Called once there is a context, and after each block. */
+  function refreshFloor() {
+    target.floorMs = minimumTargetMs();
+    return target.floorMs;
+  }
+
+  /** The target actually in force, which is never below the floor. */
+  function effectiveTargetMs() {
+    return Math.max(target.ms, target.floorMs);
+  }
+
   function targetFrames() {
-    return target.ms * 0.001 * stream.sampleRate;
+    return effectiveTargetMs() * 0.001 * stream.sampleRate;
   }
 
   // ---------------------------------------------------------------------------
@@ -261,6 +297,7 @@
   function pull(outL, outR, count) {
     if (!playing) { outL.fill(0); outR.fill(0); return; }
 
+    observedBlockFrames = count;
     updateDrift(count);
 
     var ratio = (stream.sampleRate / ctx.sampleRate) * (1 + drift.correction);
@@ -463,6 +500,9 @@
       try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { wakeLock = null; }
     }
 
+    refreshFloor();
+    renderBufferControl();
+
     playing = true;
     el.listen.textContent = 'STOP';
     el.listen.classList.add('stop');
@@ -491,10 +531,17 @@
     if (gain) gain.gain.value = value / 100;
   });
 
+  function renderBufferControl() {
+    var floor = refreshFloor();
+    el.buffer.min = String(floor);
+    if (Number(el.buffer.value) < floor) el.buffer.value = String(floor);
+    el.bufferValue.textContent = effectiveTargetMs() + ' ms';
+  }
+
   el.buffer.addEventListener('input', function () {
     target.ms = Number(el.buffer.value);
-    el.bufferValue.textContent = target.ms + ' ms';
-    send({ type: 'setLatency', ms: target.ms });
+    renderBufferControl();
+    send({ type: 'setLatency', ms: effectiveTargetMs() });
   });
 
   document.addEventListener('visibilitychange', async function () {
@@ -523,6 +570,18 @@
     el.meterR.style.width = wr + '%';
     el.meterL.classList.toggle('hot', meter.l > 0.99);
     el.meterR.classList.toggle('hot', meter.r > 0.99);
+
+    // Concealment makes an underrun sound like quiet audio rather than like a dropout,
+    // which is a good artefact and a terrible diagnostic: without this the listener
+    // concludes the mix is thin. Say what is actually happening.
+    // The floor depends on the block size the browser actually hands us, which is only
+    // known after the first callback and can in principle change.
+    if (ctx && playing) renderBufferControl();
+
+    var starving = stats.underruns > lastUnderruns;
+    lastUnderruns = stats.underruns;
+    el.noteStarving.classList.toggle('hidden', !(playing && starving));
+
     renderDiagnostics();
   }, 100);
 
@@ -564,7 +623,10 @@
       ['stream', stream.sampleRate + ' Hz · ' + stream.channels + ' ch · ' + formatName(stream.format)],
       ['packet', stream.framesPerPacket + ' frames (' + packetMs + ' ms)'],
       ['throughput', stats.kbitPerSecond + ' kbit/s · ' + stats.packets + ' packets'],
-      ['buffer', bufferMs + ' ms / target ' + target.ms + ' ms'],
+      ['buffer', bufferMs + ' ms / target ' + effectiveTargetMs() + ' ms'
+                 + (effectiveTargetMs() > target.ms ? ' (floor)' : '')],
+      ['output block', ctx ? SPN_BUFFER + ' frames (' + outputMs + ' ms)' : 'n/a'],
+      ['jitter margin', ctx ? (effectiveTargetMs() - outputMs) + ' ms' : 'n/a'],
       ['drift', Math.round(drift.ppm) + ' ppm'],
       ['underruns / resyncs', stats.underruns + ' / ' + stats.resyncs],
       ['lost / reordered', stats.lost + ' / ' + stats.reordered],
@@ -620,6 +682,9 @@
       stream: stream,
       stats: stats,
       target: target,
+      effectiveTargetMs: effectiveTargetMs,
+      minimumTargetMs: minimumTargetMs,
+      refreshFloor: refreshFloor,
       drift: drift,
       setPlaying: function (value) { playing = value; },
       setContext: function (value) { ctx = value; }

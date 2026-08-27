@@ -227,6 +227,74 @@ test('the drift correction stays inside its clamp', () => {
   }
 });
 
+test('the jitter buffer is never allowed below two output blocks', () => {
+  const receiver = loadReceiver();
+  receiver.setContext({ sampleRate: 48000 });
+  receiver.refreshFloor();
+
+  // ScriptProcessorNode takes a whole 4096-frame block in one instant, so the real margin
+  // against network jitter is target minus block duration. Anything below two blocks
+  // cannot survive ordinary Wi-Fi, and the slider must not be able to ask for it.
+  check(receiver.minimumTargetMs() >= 170, 'floor is only ' + receiver.minimumTargetMs() + ' ms');
+
+  receiver.target.ms = 40;
+  check(receiver.effectiveTargetMs() === receiver.minimumTargetMs(),
+        'a 40 ms request was not clamped to the floor');
+
+  receiver.target.ms = 400;
+  check(receiver.effectiveTargetMs() === 400, 'a request above the floor was not honoured');
+});
+
+test('bursty delivery does not quietly fade the audio away', () => {
+  // The regression this exists for: at the old 120 ms default, an 85 ms output block left
+  // 35 ms of margin — less than the p99 delivery tail on Wi-Fi. The buffer emptied on
+  // almost every burst and concealment faded each block out, so the stream lost 7.6 dB
+  // and sounded like a thin, gasping mix rather than like a dropout. Concealment was
+  // hiding the fault instead of reporting it.
+  const receiver = loadReceiver();
+  receiver.setContext({ sampleRate: 48000 });
+  receiver.setPlaying(true);
+  receiver.refreshFloor();
+
+  const RATE = 48000, PACKET = 512, BLOCK = 4096, AMPLITUDE = 0.5;
+  let phase = 0, sequence = 0, owed = 0, seed = 12345;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+
+  function deliverPacket() {
+    const samples = [];
+    for (let i = 0; i < PACKET; i++) {
+      const value = AMPLITUDE * Math.sin(2 * Math.PI * 440 * phase / RATE);
+      phase++;
+      samples.push(value, value);
+    }
+    receiver.handlePacket(makePacket({ format: 2, frames: PACKET, sequence: sequence++, samples }));
+  }
+
+  const prime = Math.ceil(receiver.effectiveTargetMs() * 0.001 * RATE / PACKET) + BLOCK / PACKET;
+  for (let i = 0; i < prime; i++) deliverPacket();
+
+  const left = new Float32Array(BLOCK);
+  const right = new Float32Array(BLOCK);
+  let sumOfSquares = 0, count = 0;
+
+  for (let block = 0; block < 200; block++) {
+    receiver.pull(left, right, BLOCK);
+
+    for (let i = 0; i < BLOCK; i++) { sumOfSquares += left[i] * left[i]; count++; }
+
+    // Every fifth burst or so is delayed and arrives late, which is what an access point
+    // under load actually does.
+    owed += BLOCK / PACKET;
+    if (rand() >= 0.4) { while (owed >= 1) { deliverPacket(); owed -= 1; } }
+  }
+
+  const rms = Math.sqrt(sumOfSquares / count);
+  const expected = AMPLITUDE / Math.SQRT2;
+  const lossDb = 20 * Math.log10(rms / expected);
+
+  check(lossDb > -1.5, 'lost ' + lossDb.toFixed(1) + ' dB to bursty delivery (was -7.6 dB before the fix)');
+});
+
 // ---------------------------------------------------------------------------
 console.log('');
 console.log(failures === 0 ? 'receiver tests passed' : failures + ' receiver check(s) failed');

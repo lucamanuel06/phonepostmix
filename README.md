@@ -252,9 +252,9 @@ code and from published device numbers. Treat it as a budget, not a measurement.
 | Ring buffer + poll | ~1–2 ms | — | The stream thread polls the ring every 2 ms (`pollIntervalMs`). |
 | Packetisation | **10.7 ms** | 5.3 / 10.7 / 21.3 ms | One packet must be full before it is sent: 256 / 512 / 1024 frames at 48 kHz. |
 | Wi-Fi + TCP | ~2–10 ms | 2 ms – seconds | A quiet LAN is a few ms. A congested access point is not, and TCP retransmits rather than dropping (see [ADR-0002](docs/adr/0002-websocket-tcp-transport.md)). |
-| Receiver jitter buffer | **120 ms** | 40–500 ms | The phone's buffer slider. This is the knob that trades latency for robustness. |
+| Receiver jitter buffer | **240 ms** | 170–600 ms | The phone's buffer slider. The minimum is not a preference: ScriptProcessorNode drains a whole 4096-frame block in one instant, so the real margin against network jitter is *target minus block duration*. Below two blocks the buffer empties on almost every Wi-Fi burst. |
 | ScriptProcessorNode | **85 ms** | fixed | 4096 frames at 48 kHz. Fixed in the receiver; smaller sizes glitch on phones. This is the single largest term we control, and it is the price of no AudioWorklet ([ADR-0003](docs/adr/0003-scriptprocessornode-and-plain-http.md)). |
-| **Subtotal, defaults** | **≈ 225 ms** | ≈ 135 ms best case | 512-frame packets, 120 ms target, wired output. |
+| **Subtotal, defaults** | **≈ 345 ms** | ≈ 275 ms best case | 512-frame packets, 240 ms target, wired output. |
 | Wired headphones | ~1–10 ms | — | Phone DAC and analogue output. |
 | **Bluetooth** | **+80–280 ms** | — | AirPods Pro 2/3 80–160 ms; AirPods 3 150–220 ms; Android A2DP 200–280 ms. |
 
@@ -264,7 +264,9 @@ code and from published device numbers. Treat it as a budget, not a measurement.
 > tonal-balance check rather than a timing reference.
 
 To pull the total down: set the packet size to 256 frames, drag the phone's buffer slider
-towards "lowest latency" until you hear dropouts, then back off. The diagnostics panel on
+towards "lowest latency" until you hear dropouts, then back off. The slider will not go
+below the floor described above, because values below it cannot work rather than merely
+being risky. The diagnostics panel on
 the phone shows its own estimate (packet + buffer + output), explicitly excluding the
 headphones.
 
@@ -347,6 +349,7 @@ not for a coworking space or a hotel.
 | "Could not bind a port" in the editor | Ports 17520–17539 are all taken, usually by other plugin instances. | Close other PhonePostMix instances; only one needs to be streaming. |
 | Meters move on the phone, no sound | iOS ringer/silent switch, or volume at zero. | Flip the silent switch; check the page's own volume slider. |
 | Audio drops out every few seconds | Wi-Fi congestion; the jitter buffer is too small. | Drag the buffer slider towards "most stable". Check the plugin's status line: rising "frames dropped" means the phone cannot keep up. |
+| **Audio is faint, thin or gasping rather than obviously broken** | Underruns. Concealment fades each gap out instead of clicking, so a network problem sounds like a quiet mix. | The page now says so directly when it happens. Drag the buffer slider towards "most stable", get closer to the access point, or move the phone to the 5 GHz SSID. Check `underruns` in **Diagnostics** — if it is climbing, the mix is fine and the network is not. |
 | Huge delay | Bluetooth. | Use wired headphones. See [Latency](#latency). |
 
 The phone's **Diagnostics** panel has a *Copy diagnostics* button — paste that into any bug
