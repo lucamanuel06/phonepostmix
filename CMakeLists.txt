@@ -52,6 +52,7 @@ juce_add_plugin(PhonePostMix
 set(PPM_CORE_SOURCES
     src/core/HttpMessage.cpp
     src/core/StreamServer.cpp
+    src/core/WirePacket.cpp
     src/core/WebSocketProtocol.cpp)
 
 target_sources(PhonePostMix PRIVATE
@@ -95,6 +96,7 @@ if(PPM_BUILD_TESTS)
         tests/AudioRingBufferTests.cpp
         tests/WebSocketProtocolTests.cpp
         tests/HttpMessageTests.cpp
+        tests/WirePacketTests.cpp
         tests/StreamServerTests.cpp)
 
     target_include_directories(PhonePostMixTests PRIVATE src tests)
@@ -104,7 +106,7 @@ if(PPM_BUILD_TESTS)
     # JUCE's recommended warning flags arrive through the link interface and would
     # otherwise be applied after any target-wide option and win.
     if(NOT MSVC)
-        set_source_files_properties(tests/AudioRingBufferTests.cpp
+        set_source_files_properties(tests/AudioRingBufferTests.cpp tests/WirePacketTests.cpp
             PROPERTIES COMPILE_OPTIONS "-Wno-float-equal")
     endif()
 
