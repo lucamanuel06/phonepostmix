@@ -195,11 +195,15 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-43 tests cover the ring buffer (including a concurrent producer/consumer soak), the packet
+55 tests cover the ring buffer (including a concurrent producer/consumer soak), the packet
 header layout byte-for-byte, the sample conversions, the HTTP parser, the WebSocket frame
 parser and accept-key derivation, and the server and engine end-to-end over a real
 loopback socket — asset serving, token rejection, ping/pong, port fallback, drop-oldest
-backpressure, and 60 start/stop cycles with a file-descriptor count to catch leaks (POSIX only).
+backpressure, and 60 start/stop cycles with a file-descriptor count to catch leaks (POSIX
+only). A second suite runs the *receiver* under Node — `tests/web/receiver.test.js` loads
+`web/app.js` into a stubbed browser and drives the packet decoder, the ring buffer, the
+resampler and the concealment directly, because a bug in any of those sounds like a bad
+mix rather than like a bug.
 
 `tools/listen.js` is a headless receiver: a real client, no dependencies, Node 16+. It
 decodes the stream and reports what it actually sees, which is what a useful bug report

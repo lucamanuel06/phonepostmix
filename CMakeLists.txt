@@ -152,4 +152,17 @@ if(PPM_BUILD_TESTS)
             juce::juce_recommended_warning_flags)
 
     add_test(NAME PhonePostMixTests COMMAND PhonePostMixTests)
+
+    # The receiver's decoding and playback arithmetic is tested under Node, because the
+    # bugs that live there — a resampler that drifts, concealment that clicks — sound like
+    # a bad mix rather than like a bug. Skipped rather than failed when Node is absent, so
+    # a contributor without it can still build and run the C++ suite.
+    find_program(PPM_NODE_EXECUTABLE NAMES node nodejs)
+
+    if(PPM_NODE_EXECUTABLE)
+        add_test(NAME PhonePostMixReceiverTests
+                 COMMAND "${PPM_NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/web/receiver.test.js")
+    else()
+        message(STATUS "PhonePostMix: node not found, skipping the receiver test")
+    endif()
 endif()

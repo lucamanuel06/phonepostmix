@@ -266,13 +266,27 @@
     var ratio = (stream.sampleRate / ctx.sampleRate) * (1 + drift.correction);
     var peakL = 0, peakR = 0;
 
+    // Concealment fade, expressed as a time constant rather than a per-sample constant so
+    // it lasts the same number of milliseconds whatever rate the phone is running at.
+    // 6 ms reaches about -43 dB after 30 ms: fast enough not to smear, slow enough not to
+    // be a click in its own right.
+    var concealDecay = Math.exp(-1 / (0.006 * ctx.sampleRate));
+
     for (var i = 0; i < count; i++) {
       // Wait until the buffer has filled to target before starting, so the first thing
       // the listener hears is not an immediate underrun.
       if (!resampler.primed) {
-        if (ringFill() < targetFrames()) { outL[i] = 0; outR[i] = 0; continue; }
+        if (ringFill() < targetFrames() || ringFill() < 2) { outL[i] = 0; outR[i] = 0; continue; }
+
+        // Seed the interpolator from the first buffered frame rather than from zero.
+        // Starting at zero emits one silent sample and a step into the signal, and that
+        // happens again on every resync — a tick the listener would reasonably blame on
+        // the mix.
         resampler.primed = true;
         resampler.phase = 0;
+        resampler.prevL = ring.l[ring.read];
+        resampler.prevR = ring.r[ring.read];
+        ring.read = (ring.read + 1) % RING_FRAMES;
       }
 
       while (resampler.phase >= 1) {
@@ -297,7 +311,7 @@
       var sr = resampler.prevR + (nextR - resampler.prevR) * t;
 
       if (conceal.active) {
-        conceal.gain *= 0.9995;            // ~20 ms fade to silence at 48 kHz
+        conceal.gain *= concealDecay;
         sl = resampler.prevL * conceal.gain;
         sr = resampler.prevR * conceal.gain;
       }
@@ -589,4 +603,25 @@
 
   setStatus('idle', 'ready');
   renderSubtitle();
+
+  // Test hook. `module` does not exist in a browser, so this block is invisible there and
+  // costs nothing; under Node it lets tests/web/receiver.test.js drive the packet decoder,
+  // the ring buffer and the resampler directly. Those are the parts most likely to be
+  // wrong and least likely to be noticed, because a subtle error in them sounds like a
+  // bad mix rather than like a bug.
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+      handlePacket: handlePacket,
+      pull: pull,
+      ringFill: ringFill,
+      ringReset: ringReset,
+      targetFrames: targetFrames,
+      stream: stream,
+      stats: stats,
+      target: target,
+      drift: drift,
+      setPlaying: function (value) { playing = value; },
+      setContext: function (value) { ctx = value; }
+    };
+  }
 })();

@@ -101,7 +101,7 @@ jobs:
           done
         shell: bash
 
-      - name: Check the receiver page parses
+      - name: Check the receiver page and headless client parse
         run: node --check web/app.js && node --check tools/listen.js
         shell: bash
 
