@@ -111,8 +111,10 @@
   </div>
 
   <div class="control">
-    <label><span>Buffer &mdash; lowest latency &harr; most stable</span><span id="bufferValue">120 ms</span></label>
-    <input type="range" id="buffer" min="40" max="500" step="10" value="120">
+    <label><span>Buffer &mdash; lowest latency &harr; most stable</span><span id="bufferValue">240 ms</span></label>
+    <!-- The minimum is raised at runtime to two output blocks: anything below that cannot
+         survive the way ScriptProcessorNode drains a whole block at once. -->
+    <input type="range" id="buffer" min="170" max="600" step="10" value="240">
   </div>
 
   <div class="note" id="noteWakeLock">
@@ -126,6 +128,13 @@
     <strong>Use wired headphones.</strong>
     Bluetooth adds 80&ndash;220&nbsp;ms of delay on its own, which is more than everything
     else in this signal chain put together.
+  </div>
+
+  <div class="note hidden" id="noteStarving">
+    <strong>The audio is arriving too slowly to play smoothly.</strong>
+    You are hearing gaps, not a quiet mix. Drag the buffer slider towards
+    &ldquo;most stable&rdquo;, move closer to the access point, or switch the phone to the
+    5&nbsp;GHz network.
   </div>
 
   <div class="note hidden" id="noteSilent">
