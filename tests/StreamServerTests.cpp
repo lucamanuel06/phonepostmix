@@ -310,3 +310,44 @@ PPM_TEST (serverDropsOldestFramesWhenAClientStopsReading)
 
     PPM_CHECK (waitFor ([&] { return server.getDropCount() > 0; }, 5000));
 }
+
+#if ! JUCE_WINDOWS
+ #include <fcntl.h>
+
+PPM_TEST (repeatedStartStopCyclesLeakNothing)
+{
+    // A host instantiates and destroys a plugin hundreds of times during validation. Each
+    // cycle leaking one file descriptor is how a plugin ends up failing auval with EMFILE
+    // on a machine that was fine yesterday. JUCE's own listener-close path leaks the
+    // socket its loopback self-connect produces, which is why the acceptor polls instead.
+    const auto countOpenFiles = []
+    {
+        int count = 0;
+
+        for (int fd = 0; fd < 4096; ++fd)
+            if (fcntl (fd, F_GETFD) != -1)
+                ++count;
+
+        return count;
+    };
+
+    {
+        ppm::StreamServer warmup;
+        warmup.start (testPort + 10, testAssets());
+    }
+
+    const auto before = countOpenFiles();
+
+    for (int i = 0; i < 60; ++i)
+    {
+        ppm::StreamServer server;
+        PPM_CHECK (server.start (testPort + 10, testAssets()));
+        server.stop();
+    }
+
+    const auto after = countOpenFiles();
+
+    // A small amount of slack for unrelated runtime activity; a leak would be ~60.
+    PPM_CHECK (after - before < 10);
+}
+#endif // ! JUCE_WINDOWS

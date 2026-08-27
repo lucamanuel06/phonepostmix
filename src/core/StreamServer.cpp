@@ -11,6 +11,9 @@ namespace ppm
 namespace
 {
 constexpr int socketPollMs        = 50;    ///< how long a read blocks before re-checking the exit flag
+constexpr int acceptPollMs        = 100;   ///< how long the acceptor waits before re-checking the exit flag
+constexpr int writeReadyMs        = 100;   ///< how long a send waits for the socket to become writable
+constexpr int writeDeadlineMs     = 5000;  ///< after this long unable to send, the client is treated as gone
 constexpr int maxRequestHeadBytes = 16384; ///< a browser request head that exceeds this is not one we want
 } // namespace
 
@@ -292,11 +295,31 @@ private:
     bool writeAll (const char* data, size_t size)
     {
         size_t sent = 0;
+        const auto deadline = juce::Time::getMillisecondCounter() + writeDeadlineMs;
 
         while (sent < size)
         {
             if (threadShouldExit())
                 return false;
+
+            // A peer that has gone away without closing (phone out of range, laptop lid
+            // shut) never becomes writable again. Without a deadline this thread would sit
+            // here until the plugin is unloaded.
+            if (juce::Time::getMillisecondCounter() > deadline)
+                return false;
+
+            // StreamingSocket::write() blocks once the kernel send buffer is full, which
+            // is exactly what happens when TCP starts retransmitting on a weak Wi-Fi
+            // link. Blocking there would stop this thread draining its queue, so wait for
+            // writability first and give up on the frame if the peer has stalled — the
+            // queue's drop policy is what keeps latency bounded from there.
+            const auto ready = socket->waitUntilReady (false, writeReadyMs);
+
+            if (ready < 0)
+                return false;
+
+            if (ready == 0)
+                continue;
 
             const auto written = socket->write (data + sent, static_cast<int> (size - sent));
 
@@ -343,11 +366,32 @@ private:
     {
         while (! threadShouldExit())
         {
-            // Returns nullptr as soon as the listening socket is closed by stop().
+            // Poll rather than block in accept().
+            //
+            // juce::StreamingSocket::waitForNextConnection() is a bare accept() with no
+            // timeout. JUCE unblocks it from close() by connecting to 127.0.0.1 on the
+            // listening port, which has two problems: it only works if the listener is
+            // bound to INADDR_ANY, and the socket that self-connect produces is accepted
+            // and then leaked, because waitForNextConnection() has already seen
+            // connected == false and returns nullptr without closing it. A host that
+            // instantiates the plugin hundreds of times during validation would leak a
+            // file descriptor per teardown.
+            //
+            // waitUntilReady() is select()-based and works on a listening socket, where
+            // readable means "a connection is pending". Polling it means shutdown costs
+            // at most one poll interval and never depends on the self-connect at all.
+            const auto ready = owner.listeningSocket->waitUntilReady (true, acceptPollMs);
+
+            if (ready < 0)
+                break;
+
+            if (ready == 0)
+                continue;
+
             std::unique_ptr<juce::StreamingSocket> accepted { owner.listeningSocket->waitForNextConnection() };
 
             if (accepted == nullptr)
-                break;
+                continue;
 
             auto connection = std::make_shared<Connection> (owner, std::move (accepted),
                                                             owner.nextClientId.fetch_add (1));
@@ -421,19 +465,20 @@ void StreamServer::stop()
     if (! running.exchange (false) && acceptor == nullptr)
         return;
 
-    if (acceptor != nullptr)
-        acceptor->requestStop();
-
-    // Order matters. Closing the listener first is what releases the acceptor thread from
-    // its blocking accept; only then can it be joined.
-    if (listeningSocket != nullptr)
-        listeningSocket->close();
-
+    // Order matters, and it is the opposite of the obvious one. The acceptor polls with a
+    // timeout, so signalling and joining it first costs at most one poll interval and
+    // leaves the listening socket untouched. Closing the listener while the acceptor is
+    // still alive would trigger JUCE's loopback self-connect hack and leak the descriptor
+    // it produces.
     if (acceptor != nullptr)
     {
+        acceptor->requestStop();
         acceptor->join();
         acceptor.reset();
     }
+
+    if (listeningSocket != nullptr)
+        listeningSocket->close();
 
     std::vector<std::shared_ptr<Connection>> toClose;
 
