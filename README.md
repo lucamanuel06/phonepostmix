@@ -268,6 +268,10 @@ towards "lowest latency" until you hear dropouts, then back off. The diagnostics
 the phone shows its own estimate (packet + buffer + output), explicitly excluding the
 headphones.
 
+Everything the automated suite cannot check — whether real DAWs load the plugin, and
+whether a real phone plays it — is listed as an explicit pass/fail checklist in
+[`docs/TESTING.md`](docs/TESTING.md), with the boxes that are still unticked left unticked.
+
 ## Known limitations
 
 These are consequences of one root cause: **the page is served over plain HTTP from an
