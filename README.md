@@ -1,5 +1,7 @@
 # PhonePostMix
 
+[![build](https://github.com/lucamanuel06/phonepostmix/actions/workflows/build.yml/badge.svg)](https://github.com/lucamanuel06/phonepostmix/actions/workflows/build.yml)
+
 Listen to your DAW's master bus on your phone, in real time, over your own Wi-Fi — no app
 to install on the phone, no cloud service, no cable.
 
@@ -27,9 +29,11 @@ What works:
 
 What does not work, or is not there yet:
 
-- **No verification on Windows or Linux.** The code has no macOS-only paths and the CMake
-  is cross-platform, but nobody has built or run it on those platforms. Treat them as
-  unproven.
+- **Windows and Linux build and pass the test suite in CI, but nobody has loaded the
+  plugin into a DAW there.** The whole test suite runs green on windows-2022 and
+  ubuntu-22.04, so the code compiles and the protocol works on those platforms. Whether a
+  host loads it, whether the firewall prompt is survivable, and whether the editor looks
+  right are all unknown. Treat them as unproven in a way that "it builds" does not fix.
 - **No compression.** Uncompressed PCM only, 1.5–3.1 Mbit/s.
 - **No encryption.** Plain HTTP and plain `ws://` (see [Security](#security)).
 - The phone's buffer slider is applied by the receiver, not negotiated with the sender.
@@ -164,8 +168,11 @@ cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
 
-AU is macOS-only; on Windows the build produces VST3 and Standalone. **Untested** — if you
-try it, the build result and any diagnostics are a genuinely useful bug report.
+AU is macOS-only; on Windows the build produces VST3 and Standalone. CI builds this and
+runs the full test suite on `windows-2022`, but **nobody has loaded the plugin into a DAW
+on Windows** — if you do, the result either way is a genuinely useful bug report. Expect a
+Windows Defender Firewall prompt the first time you press start; it will name your DAW, not
+PhonePostMix.
 
 ### Linux
 
@@ -185,7 +192,8 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-VST3 and Standalone only. **Untested**, same caveat as Windows.
+VST3 and Standalone only. CI builds this and runs the full test suite on `ubuntu-22.04`,
+but **nobody has loaded the plugin into a DAW on Linux**, same caveat as Windows.
 
 ## Testing
 
