@@ -24,6 +24,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # --------------------------------------------------------------------------------------
 set(PPM_JUCE_PATH "" CACHE PATH "Path to an existing JUCE checkout (skips the download)")
 
+# Installing into the user's plug-in folders is what you want on a development machine and
+# is exactly what you do not want on a build agent, which has no business writing outside
+# its workspace.
+option(PPM_COPY_PLUGIN_AFTER_BUILD "Install the built plugin into the user plug-in folders" ON)
+
 if(PPM_JUCE_PATH)
     message(STATUS "PhonePostMix: using local JUCE at ${PPM_JUCE_PATH}")
     add_subdirectory("${PPM_JUCE_PATH}" juce EXCLUDE_FROM_ALL)
@@ -47,7 +52,7 @@ juce_add_plugin(PhonePostMix
     NEEDS_MIDI_INPUT          FALSE
     NEEDS_MIDI_OUTPUT         FALSE
     IS_MIDI_EFFECT            FALSE
-    COPY_PLUGIN_AFTER_BUILD   TRUE)
+    COPY_PLUGIN_AFTER_BUILD   ${PPM_COPY_PLUGIN_AFTER_BUILD})
 
 # --------------------------------------------------------------------------------------
 # The receiver page, compiled into the binary.

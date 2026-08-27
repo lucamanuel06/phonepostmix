@@ -134,6 +134,8 @@ Useful options for every platform:
 - `-DPPM_UNIVERSAL_BINARY=ON` — macOS only; builds arm64 + x86_64. Off by default because
   it doubles build time; turn it on for releases.
 - `-DPPM_BUILD_TESTS=OFF` — skip the test target.
+- `-DPPM_COPY_PLUGIN_AFTER_BUILD=OFF` — do not install into the user plug-in folders after
+  each build. On by default, and what CI uses.
 
 ### macOS
 
@@ -195,7 +197,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-55 tests cover the ring buffer (including a concurrent producer/consumer soak), the packet
+57 tests cover the ring buffer (including a concurrent producer/consumer soak), the packet
 header layout byte-for-byte, the sample conversions, the HTTP parser, the WebSocket frame
 parser and accept-key derivation, and the server and engine end-to-end over a real
 loopback socket — asset serving, token rejection, ping/pong, port fallback, drop-oldest

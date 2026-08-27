@@ -97,8 +97,12 @@ public:
     /** Copies a block out to the network. Real-time safe; never blocks. */
     void pushAudio (const juce::AudioBuffer<float>& buffer) noexcept;
 
-    /** Tells the receiver whether the host's transport is rolling. */
-    void setHostPlaying (bool isPlaying) noexcept { hostPlaying.store (isPlaying); }
+    /** Tells the receiver whether the host's transport is rolling.
+
+        Real-time safe: it stores a flag. The streaming thread notices the change and is
+        the one that tells the listeners, because broadcasting takes a lock.
+    */
+    void setHostPlaying (bool isPlaying) noexcept { hostPlaying.store (isPlaying, std::memory_order_relaxed); }
 
 private:
     void run() override;
@@ -138,6 +142,10 @@ private:
     std::vector<uint8_t> packet;
     uint32_t sequence = 0;
     uint64_t sampleClock = 0;
+    uint32_t lastPacketTimeMs = 0;
+    bool lastHostPlaying = false;
+
+    void sendPacket (const wire::PacketInfo& info, const float* interleaved);
 
     JUCE_DECLARE_NON_COPYABLE (StreamEngine)
 };

@@ -47,9 +47,10 @@ Options:
 | `PPM_JUCE_PATH` | empty | Point at an existing JUCE checkout to skip the download. Worth doing once you have a second clone: `-DPPM_JUCE_PATH=$HOME/dev/JUCE`. |
 | `PPM_UNIVERSAL_BINARY` | `OFF` | macOS arm64 + x86_64. Doubles build time; on for releases and CI, off day to day. Must be set on the *first* configure of a build directory — the deployment target and architectures are baked in before the first target exists. |
 | `PPM_BUILD_TESTS` | `ON` | Turn off for a plugin-only build. |
+| `PPM_COPY_PLUGIN_AFTER_BUILD` | `ON` | Installs the AU and VST3 into your user plug-in folders after every build. CI sets it `OFF`: a build agent has no business writing outside its workspace. |
 
-`COPY_PLUGIN_AFTER_BUILD` is on, so every build installs the AU and VST3 into your user
-plug-in folders. That is convenient and occasionally surprising: your DAW picks up the new
+`PPM_COPY_PLUGIN_AFTER_BUILD` is on by default, so every build installs the AU and VST3
+into your user plug-in folders. That is convenient and occasionally surprising: your DAW picks up the new
 binary the next time it scans, including a debug build with assertions live.
 
 Useful artefacts after a build:

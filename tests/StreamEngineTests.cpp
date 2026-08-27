@@ -297,3 +297,69 @@ PPM_TEST (engineDoesNothingWhileStopped)
     PPM_CHECK (engine.getListenUrl().isEmpty());
     PPM_CHECK (! engine.isRunning());
 }
+
+PPM_TEST (engineKeepsTheStreamAliveWhenTheHostStopsCallingProcessBlock)
+{
+    ppm::StreamEngine engine;
+    ppm::StreamEngine::Settings settings;
+    settings.preferredPort = 35160;
+    settings.framesPerPacket = 256;
+    engine.setSettings (settings);
+
+    engine.prepare (48000.0, 512, 2);
+    PPM_CHECK (engine.start());
+
+    const auto url = engine.getListenUrl();
+    EngineClient client;
+    PPM_CHECK (client.open (engine.getPort(), "/ws?t=" + tokenFromUrl (url)));
+    PPM_CHECK (eventually ([&] { return engine.getNumClients() == 1; }));
+
+    // No audio is pushed at all: this is what a host that has stopped its transport looks
+    // like from here. Logic does exactly this. Without a keepalive the listener would
+    // starve, conceal to silence, and have no way to tell that from a broken plugin.
+    std::vector<uint8_t> payload;
+    PPM_CHECK (client.waitForBinaryFrame (ppm::wire::headerBytes, payload, 3000));
+
+    ppm::wire::PacketInfo info;
+    PPM_CHECK (ppm::wire::readHeader (payload.data(), payload.size(), info));
+    PPM_CHECK ((info.flags & ppm::wire::Flags::silence) != 0);
+    PPM_CHECK_EQ (int (info.frames), 256);
+    PPM_CHECK_EQ (int (payload.size()), ppm::wire::packetSize (info));
+
+    // Every sample in a keepalive packet must actually be silent.
+    bool allZero = true;
+    for (size_t i = ppm::wire::headerBytes; i < payload.size(); ++i)
+        if (payload[i] != 0)
+            allZero = false;
+
+    PPM_CHECK (allZero);
+}
+
+PPM_TEST (engineDoesNotFloodTheNetworkWithKeepalives)
+{
+    ppm::StreamEngine engine;
+    ppm::StreamEngine::Settings settings;
+    settings.preferredPort = 35170;
+    settings.framesPerPacket = 256;
+    engine.setSettings (settings);
+
+    engine.prepare (48000.0, 512, 2);
+    PPM_CHECK (engine.start());
+
+    EngineClient client;
+    PPM_CHECK (client.open (engine.getPort(), "/ws?t=" + tokenFromUrl (engine.getListenUrl())));
+    PPM_CHECK (eventually ([&] { return engine.getNumClients() == 1; }));
+
+    // A silent host should cost a trickle, not a stream. At 250 ms apart, one second of
+    // starvation is about four packets; a regression that sent them at full rate would
+    // produce nearly two hundred.
+    int received = 0;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds (1200);
+
+    std::vector<uint8_t> payload;
+    while (std::chrono::steady_clock::now() < deadline)
+        if (client.waitForBinaryFrame (ppm::wire::headerBytes, payload, 300))
+            ++received;
+
+    PPM_CHECK (received <= 10);
+}
