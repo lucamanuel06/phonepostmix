@@ -49,7 +49,13 @@ juce_add_plugin(PhonePostMix
     IS_MIDI_EFFECT            FALSE
     COPY_PLUGIN_AFTER_BUILD   TRUE)
 
+set(PPM_CORE_SOURCES
+    src/core/HttpMessage.cpp
+    src/core/StreamServer.cpp
+    src/core/WebSocketProtocol.cpp)
+
 target_sources(PhonePostMix PRIVATE
+    ${PPM_CORE_SOURCES}
     src/plugin/PluginProcessor.cpp
     src/plugin/PluginEditor.cpp)
 
@@ -84,17 +90,22 @@ if(PPM_BUILD_TESTS)
     juce_add_console_app(PhonePostMixTests PRODUCT_NAME "PhonePostMixTests")
 
     target_sources(PhonePostMixTests PRIVATE
+        ${PPM_CORE_SOURCES}
         tests/TestMain.cpp
         tests/AudioRingBufferTests.cpp
         tests/WebSocketProtocolTests.cpp
-        src/core/WebSocketProtocol.cpp)
+        tests/HttpMessageTests.cpp
+        tests/StreamServerTests.cpp)
 
     target_include_directories(PhonePostMixTests PRIVATE src tests)
 
     # Tests compare floats that were copied, not computed, so exact comparison is the
-    # correct assertion here and -Wfloat-equal is pure noise.
+    # correct assertion here and -Wfloat-equal is pure noise. Set per source file, because
+    # JUCE's recommended warning flags arrive through the link interface and would
+    # otherwise be applied after any target-wide option and win.
     if(NOT MSVC)
-        target_compile_options(PhonePostMixTests PRIVATE -Wno-float-equal)
+        set_source_files_properties(tests/AudioRingBufferTests.cpp
+            PROPERTIES COMPILE_OPTIONS "-Wno-float-equal")
     endif()
 
     target_compile_definitions(PhonePostMixTests PUBLIC
@@ -105,6 +116,7 @@ if(PPM_BUILD_TESTS)
     target_link_libraries(PhonePostMixTests
         PRIVATE
             juce::juce_audio_basics
+            juce::juce_events
         PUBLIC
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
