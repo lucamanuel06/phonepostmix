@@ -69,3 +69,43 @@ target_link_libraries(PhonePostMix
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+# --------------------------------------------------------------------------------------
+# Tests
+#
+# A console app rather than a plugin, so `ctest` can run the DSP and protocol code with no
+# host, no audio device and no network.
+# --------------------------------------------------------------------------------------
+option(PPM_BUILD_TESTS "Build the PhonePostMix test suite" ON)
+
+if(PPM_BUILD_TESTS)
+    enable_testing()
+
+    juce_add_console_app(PhonePostMixTests PRODUCT_NAME "PhonePostMixTests")
+
+    target_sources(PhonePostMixTests PRIVATE
+        tests/TestMain.cpp
+        tests/AudioRingBufferTests.cpp)
+
+    target_include_directories(PhonePostMixTests PRIVATE src tests)
+
+    # Tests compare floats that were copied, not computed, so exact comparison is the
+    # correct assertion here and -Wfloat-equal is pure noise.
+    if(NOT MSVC)
+        target_compile_options(PhonePostMixTests PRIVATE -Wno-float-equal)
+    endif()
+
+    target_compile_definitions(PhonePostMixTests PUBLIC
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_STANDALONE_APPLICATION=1)
+
+    target_link_libraries(PhonePostMixTests
+        PRIVATE
+            juce::juce_audio_basics
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME PhonePostMixTests COMMAND PhonePostMixTests)
+endif()
