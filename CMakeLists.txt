@@ -49,11 +49,29 @@ juce_add_plugin(PhonePostMix
     IS_MIDI_EFFECT            FALSE
     COPY_PLUGIN_AFTER_BUILD   TRUE)
 
+# --------------------------------------------------------------------------------------
+# The receiver page, compiled into the binary.
+#
+# The plugin must be able to serve the page with no runtime file dependency: a VST3 that
+# needed a sibling directory would break the moment someone moved the bundle.
+# --------------------------------------------------------------------------------------
+juce_add_binary_data(PhonePostMixAssets
+    HEADER_NAME BinaryData.h
+    NAMESPACE   BinaryData
+    SOURCES
+        web/index.html
+        web/app.js)
+
+# Binary data is linked into shared modules (VST3, AU), which requires position-independent
+# code or the link fails on Linux.
+set_target_properties(PhonePostMixAssets PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+
 set(PPM_CORE_SOURCES
     src/core/HttpMessage.cpp
+    src/core/StreamEngine.cpp
     src/core/StreamServer.cpp
-    src/core/WirePacket.cpp
-    src/core/WebSocketProtocol.cpp)
+    src/core/WebSocketProtocol.cpp
+    src/core/WirePacket.cpp)
 
 target_sources(PhonePostMix PRIVATE
     ${PPM_CORE_SOURCES}
@@ -61,6 +79,7 @@ target_sources(PhonePostMix PRIVATE
     src/plugin/PluginEditor.cpp)
 
 target_compile_definitions(PhonePostMix PUBLIC
+    PPM_VERSION="${PROJECT_VERSION}"
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
@@ -71,6 +90,7 @@ target_include_directories(PhonePostMix PRIVATE src)
 
 target_link_libraries(PhonePostMix
     PRIVATE
+        PhonePostMixAssets
         juce::juce_audio_utils
     PUBLIC
         juce::juce_recommended_config_flags
@@ -97,6 +117,7 @@ if(PPM_BUILD_TESTS)
         tests/WebSocketProtocolTests.cpp
         tests/HttpMessageTests.cpp
         tests/WirePacketTests.cpp
+        tests/StreamEngineTests.cpp
         tests/StreamServerTests.cpp)
 
     target_include_directories(PhonePostMixTests PRIVATE src tests)
@@ -111,12 +132,14 @@ if(PPM_BUILD_TESTS)
     endif()
 
     target_compile_definitions(PhonePostMixTests PUBLIC
+        PPM_VERSION="${PROJECT_VERSION}"
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_STANDALONE_APPLICATION=1)
 
     target_link_libraries(PhonePostMixTests
         PRIVATE
+            PhonePostMixAssets
             juce::juce_audio_basics
             juce::juce_events
         PUBLIC

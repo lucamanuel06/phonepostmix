@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>PhonePostMix</title>
+<style>
+  :root {
+    --bg: #0e1013;
+    --panel: #171a1f;
+    --line: #262b33;
+    --text: #e8ecf2;
+    --muted: #8a94a6;
+    --accent: #46d19a;
+    --warn: #f0b429;
+    --bad: #e5484d;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-text-size-adjust: 100%;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  main { max-width: 34rem; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.01em; margin: 0; }
+  #status { display: flex; align-items: center; gap: 0.45rem; font-size: 0.8rem; color: var(--muted); }
+  #dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--muted); flex: none; }
+  #dot.live { background: var(--accent); }
+  #dot.connecting { background: var(--warn); }
+  #dot.error { background: var(--bad); }
+
+  #subtitle { color: var(--muted); font-size: 0.8rem; margin: 0.35rem 0 1.5rem; font-variant-numeric: tabular-nums; }
+
+  #listen {
+    width: 100%;
+    padding: 1.5rem 1rem;
+    font-size: 1.35rem;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    color: #06110c;
+    background: var(--accent);
+    border: 0;
+    border-radius: 0.9rem;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #listen.stop { background: #2b3038; color: var(--text); }
+  #listen:disabled { opacity: 0.45; }
+
+  .meters { margin: 1.5rem 0; display: grid; gap: 0.4rem; }
+  .meter { display: flex; align-items: center; gap: 0.6rem; font-size: 0.7rem; color: var(--muted); }
+  .meter .track { flex: 1; height: 0.5rem; border-radius: 0.25rem; background: #22262d; overflow: hidden; }
+  .meter .fill { height: 100%; width: 0; background: var(--accent); transition: width 90ms linear; }
+  .meter .fill.hot { background: var(--bad); }
+
+  .control { margin: 1.1rem 0; }
+  .control label { display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.4rem; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+
+  .note {
+    border-left: 3px solid var(--warn);
+    background: var(--panel);
+    padding: 0.7rem 0.8rem;
+    border-radius: 0 0.4rem 0.4rem 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    margin: 0.7rem 0;
+    color: #cdd4de;
+  }
+  .note.hidden { display: none; }
+
+  details { margin-top: 1.6rem; border-top: 1px solid var(--line); padding-top: 0.9rem; }
+  summary { cursor: pointer; font-size: 0.82rem; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.75rem; margin-top: 0.7rem; font-variant-numeric: tabular-nums; }
+  td { padding: 0.24rem 0; border-bottom: 1px solid #1d2128; vertical-align: top; }
+  td:first-child { color: var(--muted); width: 46%; }
+  .yes { color: var(--accent); }
+  .no { color: var(--muted); }
+  #copy { margin-top: 0.8rem; padding: 0.5rem 0.9rem; font-size: 0.75rem; background: #22262d;
+          color: var(--text); border: 1px solid var(--line); border-radius: 0.4rem; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>PhonePostMix</h1>
+    <div id="status"><span id="dot"></span><span id="statusText">idle</span></div>
+  </header>
+  <p id="subtitle">not connected</p>
+
+  <button id="listen">LISTEN</button>
+
+  <div class="meters">
+    <div class="meter"><span>L</span><div class="track"><div class="fill" id="meterL"></div></div></div>
+    <div class="meter"><span>R</span><div class="track"><div class="fill" id="meterR"></div></div></div>
+  </div>
+
+  <div class="control">
+    <label><span>Volume</span><span id="volumeValue">100%</span></label>
+    <input type="range" id="volume" min="0" max="100" value="100">
+  </div>
+
+  <div class="control">
+    <label><span>Buffer &mdash; lowest latency &harr; most stable</span><span id="bufferValue">120 ms</span></label>
+    <input type="range" id="buffer" min="40" max="500" step="10" value="120">
+  </div>
+
+  <div class="note" id="noteWakeLock">
+    <strong>Your screen will lock and the audio will stop.</strong>
+    This page is served over plain HTTP, so the browser will not let it hold a screen
+    wake lock. Set Auto&#8209;Lock to Never while you monitor, and keep this tab in the
+    foreground &mdash; iOS suspends web audio as soon as the screen locks.
+  </div>
+
+  <div class="note" id="noteBluetooth">
+    <strong>Use wired headphones.</strong>
+    Bluetooth adds 80&ndash;220&nbsp;ms of delay on its own, which is more than everything
+    else in this signal chain put together.
+  </div>
+
+  <div class="note hidden" id="noteSilent">
+    <strong>Hearing nothing but seeing the meters move?</strong>
+    Check the ringer/silent switch &mdash; on iOS it mutes web audio.
+  </div>
+
+  <details>
+    <summary>Diagnostics</summary>
+    <table id="diagnostics"><tbody></tbody></table>
+    <button id="copy">Copy diagnostics</button>
+  </details>
+</main>
+<audio id="keepAlive" loop playsinline preload="auto"></audio>
+<script src="app.js"></script>
+</body>
+</html>
