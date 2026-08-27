@@ -1,6 +1,8 @@
 #include "plugin/PluginProcessor.h"
 #include "plugin/PluginEditor.h"
 
+#include <iostream>
+
 namespace ppm
 {
 
@@ -19,6 +21,19 @@ PhonePostMixProcessor::PhonePostMixProcessor()
     // of times; binding a port in the constructor would mean a port conflict storm, a
     // firewall prompt during a scan, and a listening socket for every plugin the user has
     // never opened. Streaming starts when the user asks for it.
+    //
+    // The one exception is PPM_AUTOSTART, which exists so the standalone build can be
+    // driven from a script with no window to click on. It is opt-in through the
+    // environment and is how tools/listen.js is tested; see docs/DEVELOPMENT.md.
+    if (juce::SystemStats::getEnvironmentVariable ("PPM_AUTOSTART", {}) == "1")
+    {
+        startStreaming();
+
+        // The listen URL contains a freshly generated token, and a script has no window to
+        // read it from, so print it. Only ever reached when the environment variable is
+        // set explicitly.
+        std::cout << "PPM_LISTEN_URL=" << engine.getListenUrl() << std::endl;
+    }
 }
 
 PhonePostMixProcessor::~PhonePostMixProcessor()
