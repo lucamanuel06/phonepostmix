@@ -408,6 +408,12 @@ void StreamEngine::streamTextMessageReceived (int clientId, const std::string& m
         entry->userAgent = parsed.getProperty ("ua", {}).toString();
         entry->audioPath = parsed.getProperty ("path", {}).toString();
     }
+    else if (type == "setLatency")
+    {
+        // Informational: the receiver has already applied it. Recording it means the
+        // engineer can see what the person holding the phone actually chose.
+        entry->targetMs = static_cast<int> (parsed.getProperty ("ms", 0));
+    }
     else if (type == "stat")
     {
         entry->bufferMs  = static_cast<int> (parsed.getProperty ("bufferMs", 0));
