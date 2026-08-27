@@ -48,6 +48,15 @@ public:
     /** Resolves a request path such as "/" or "/app.js" to an asset, or nullopt for 404. */
     using AssetProvider = std::function<std::optional<Asset> (const std::string& path)>;
 
+    /** Decides whether a WebSocket upgrade may proceed, given the raw request target.
+
+        Called with the full target including the query string, e.g. "/ws?t=abc123".
+        Returning false answers 403 and closes. Used to check the pairing token, so that
+        anyone else on the network who finds the port gets the page but not the audio.
+        If unset, every upgrade is accepted.
+    */
+    using UpgradeAuthorizer = std::function<bool (const std::string& target)>;
+
     /** Called on a connection's own thread. Keep these handlers short and non-blocking. */
     struct Listener
     {
@@ -67,6 +76,9 @@ public:
         the preferred one. Returns false only if the whole range is taken.
     */
     bool start (int preferredPort, AssetProvider provider, Listener* listener = nullptr);
+
+    /** Installs the upgrade check. Call before `start`. */
+    void setUpgradeAuthorizer (UpgradeAuthorizer authorizer) { upgradeAuthorizer = std::move (authorizer); }
 
     /** Stops accepting, disconnects every client and joins all threads. Idempotent. */
     void stop();
@@ -98,6 +110,7 @@ private:
     std::vector<std::shared_ptr<Connection>> connections;
 
     AssetProvider assetProvider;
+    UpgradeAuthorizer upgradeAuthorizer;
     Listener* listener = nullptr;
 
     std::atomic<bool> running { false };

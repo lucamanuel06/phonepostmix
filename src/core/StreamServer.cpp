@@ -164,7 +164,20 @@ private:
             return false;
 
         if (request->isWebSocketUpgrade())
+        {
+            if (owner.upgradeAuthorizer && ! owner.upgradeAuthorizer (request->target))
+            {
+                static constexpr const char* body = "Forbidden";
+                const auto denial = http::makeResponseHead (403, "Forbidden", "text/plain; charset=utf-8",
+                                                            static_cast<long long> (std::strlen (body)),
+                                                            { "Connection: close" });
+                writeAll (denial.data(), denial.size());
+                writeAll (body, std::strlen (body));
+                return false;
+            }
+
             return performUpgrade (*request);
+        }
 
         serveAsset (*request);
         return false;   // static responses close the connection
