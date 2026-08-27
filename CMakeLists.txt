@@ -24,6 +24,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # --------------------------------------------------------------------------------------
 set(PPM_JUCE_PATH "" CACHE PATH "Path to an existing JUCE checkout (skips the download)")
 
+# Installing into the user's plug-in folders is what you want on a development machine and
+# is exactly what you do not want on a build agent, which has no business writing outside
+# its workspace.
+option(PPM_COPY_PLUGIN_AFTER_BUILD "Install the built plugin into the user plug-in folders" ON)
+
 if(PPM_JUCE_PATH)
     message(STATUS "PhonePostMix: using local JUCE at ${PPM_JUCE_PATH}")
     add_subdirectory("${PPM_JUCE_PATH}" juce EXCLUDE_FROM_ALL)
@@ -47,7 +52,7 @@ juce_add_plugin(PhonePostMix
     NEEDS_MIDI_INPUT          FALSE
     NEEDS_MIDI_OUTPUT         FALSE
     IS_MIDI_EFFECT            FALSE
-    COPY_PLUGIN_AFTER_BUILD   TRUE)
+    COPY_PLUGIN_AFTER_BUILD   ${PPM_COPY_PLUGIN_AFTER_BUILD})
 
 # --------------------------------------------------------------------------------------
 # The receiver page, compiled into the binary.
@@ -152,4 +157,17 @@ if(PPM_BUILD_TESTS)
             juce::juce_recommended_warning_flags)
 
     add_test(NAME PhonePostMixTests COMMAND PhonePostMixTests)
+
+    # The receiver's decoding and playback arithmetic is tested under Node, because the
+    # bugs that live there — a resampler that drifts, concealment that clicks — sound like
+    # a bad mix rather than like a bug. Skipped rather than failed when Node is absent, so
+    # a contributor without it can still build and run the C++ suite.
+    find_program(PPM_NODE_EXECUTABLE NAMES node nodejs)
+
+    if(PPM_NODE_EXECUTABLE)
+        add_test(NAME PhonePostMixReceiverTests
+                 COMMAND "${PPM_NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/web/receiver.test.js")
+    else()
+        message(STATUS "PhonePostMix: node not found, skipping the receiver test")
+    endif()
 endif()

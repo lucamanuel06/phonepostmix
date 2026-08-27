@@ -21,6 +21,16 @@ namespace
 */
 constexpr int pollIntervalMs = 2;
 
+/** How long the ring may stay empty before a silence packet is sent anyway.
+
+    A host stops calling processBlock when its transport stops — Logic does, and it is
+    entirely within its rights to. Without a keepalive the phone would simply starve: the
+    jitter buffer drains, concealment fades it out, and the listener sees a live connection
+    producing nothing, with no way to tell that from a bug. A silence packet every quarter
+    second keeps the timeline moving and carries the flag that lets the page say so.
+*/
+constexpr int silenceKeepaliveMs = 250;
+
 /** Peak meters decay by this factor per block, so the editor's bars fall smoothly. */
 constexpr float meterDecay = 0.85f;
 
@@ -251,59 +261,92 @@ void StreamEngine::pushAudio (const juce::AudioBuffer<float>& buffer) noexcept
 //==============================================================================
 void StreamEngine::run()
 {
+    lastPacketTimeMs = juce::Time::getMillisecondCounter();
+    lastHostPlaying = hostPlaying.load (std::memory_order_relaxed);
+
     while (! threadShouldExit())
     {
         const auto active = getSettings();
-        const auto channels = static_cast<uint8_t> (currentChannels.load());
+        const auto channels = static_cast<uint8_t> (juce::jmax (1, currentChannels.load()));
         const auto frames = static_cast<uint16_t> (active.framesPerPacket);
-
-        if (ring.getNumReady() < frames || ring.getNumChannels() <= 0)
-        {
-            wait (pollIntervalMs);
-            continue;
-        }
-
         const auto numSamples = static_cast<int> (frames) * static_cast<int> (channels);
 
         if (static_cast<int> (scratch.size()) < numSamples)
             scratch.resize (static_cast<size_t> (numSamples));
 
-        const auto framesRead = ring.read (scratch.data(), frames);
+        // Tell the listeners when the host's transport starts or stops, so the page can
+        // say "the DAW is stopped" instead of showing unexplained silence. Done here
+        // rather than in setHostPlaying because broadcasting takes a lock and
+        // setHostPlaying is called from the audio thread.
+        const auto playing = hostPlaying.load (std::memory_order_relaxed);
 
-        if (framesRead < frames)
-            continue;   // another thread drained it between the check and the read
+        if (playing != lastHostPlaying)
+        {
+            lastHostPlaying = playing;
+            server.broadcastText (makeSessionJson ("state").toStdString());
+        }
 
         wire::PacketInfo info;
         info.format       = active.format;
         info.channels     = channels;
-        info.sequence     = sequence++;
         info.sampleRate   = static_cast<uint32_t> (currentSampleRate.load());
         info.frames       = frames;
         info.configEpoch  = configEpoch.load();
-        info.senderTimeMs = static_cast<uint32_t> (juce::Time::getMillisecondCounter());
 
-        if (discontinuityPending.exchange (false))
+        const auto now = juce::Time::getMillisecondCounter();
+        const auto haveAudio = ring.getNumChannels() > 0 && ring.getNumReady() >= frames;
+
+        if (haveAudio)
         {
-            sampleClock = 0;
-            info.flags |= wire::Flags::discontinuity | wire::Flags::configChanged;
+            if (ring.read (scratch.data(), frames) < frames)
+                continue;   // drained between the check and the read
+        }
+        else
+        {
+            if (now - lastPacketTimeMs < static_cast<uint32_t> (silenceKeepaliveMs))
+            {
+                wait (pollIntervalMs);
+                continue;
+            }
+
+            std::fill (scratch.begin(), scratch.begin() + numSamples, 0.0f);
+            info.flags |= wire::Flags::silence;
         }
 
-        info.sampleClock = sampleClock;
-        sampleClock += frames;
-
-        if (! hostPlaying.load())
+        if (! playing)
             info.flags |= wire::Flags::silence;
 
-        const auto size = static_cast<size_t> (wire::packetSize (info));
-
-        if (packet.size() != size)
-            packet.resize (size);
-
-        wire::writeHeader (packet.data(), info);
-        wire::writeSamples (packet.data() + wire::headerBytes, scratch.data(), numSamples, info.format);
-
-        server.broadcastBinary (packet.data(), packet.size());
+        sendPacket (info, scratch.data());
+        lastPacketTimeMs = now;
     }
+}
+
+void StreamEngine::sendPacket (const wire::PacketInfo& templateInfo, const float* interleaved)
+{
+    auto info = templateInfo;
+    info.sequence = sequence++;
+    info.senderTimeMs = static_cast<uint32_t> (juce::Time::getMillisecondCounter());
+
+    if (discontinuityPending.exchange (false))
+    {
+        sampleClock = 0;
+        info.flags |= wire::Flags::discontinuity | wire::Flags::configChanged;
+    }
+
+    info.sampleClock = sampleClock;
+    sampleClock += info.frames;
+
+    const auto size = static_cast<size_t> (wire::packetSize (info));
+
+    if (packet.size() != size)
+        packet.resize (size);
+
+    wire::writeHeader (packet.data(), info);
+    wire::writeSamples (packet.data() + wire::headerBytes, interleaved,
+                        static_cast<int> (info.frames) * static_cast<int> (info.channels),
+                        info.format);
+
+    server.broadcastBinary (packet.data(), packet.size());
 }
 
 //==============================================================================
@@ -407,6 +450,12 @@ void StreamEngine::streamTextMessageReceived (int clientId, const std::string& m
     {
         entry->userAgent = parsed.getProperty ("ua", {}).toString();
         entry->audioPath = parsed.getProperty ("path", {}).toString();
+    }
+    else if (type == "setLatency")
+    {
+        // Informational: the receiver has already applied it. Recording it means the
+        // engineer can see what the person holding the phone actually chose.
+        entry->targetMs = static_cast<int> (parsed.getProperty ("ms", 0));
     }
     else if (type == "stat")
     {

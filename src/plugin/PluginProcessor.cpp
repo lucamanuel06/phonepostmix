@@ -77,8 +77,10 @@ void PhonePostMixProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     // Nobody monitors a render on their phone.
     if (! isNonRealtime())
     {
-        if (auto* playHead = getPlayHead())
-            if (const auto position = playHead->getPosition())
+        // Named `head` rather than `playHead` because AudioProcessor already has a member
+        // of that name and GCC treats the shadowing as a warning, which is an error here.
+        if (auto* head = getPlayHead())
+            if (const auto position = head->getPosition())
                 engine.setHostPlaying (position->getIsPlaying());
 
         engine.pushAudio (buffer);
